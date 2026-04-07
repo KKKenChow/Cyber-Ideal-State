@@ -33,24 +33,23 @@ env/
 *.swo
 *~
 
-# Data files (keep directory structure, ignore content)
+# Logs
+*.log
+*.log.*
+logs/
+
+# Data files (runtime data, not committed)
 data/cache/*
 data/sessions/*
 data/decisions/*
 data/roles/*
 !data/.gitkeep
 
-# Generated Agents
-agents/
-
-# Logs
-*.log
-logs/
-*.log.*
-
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # Environment variables
 .env
@@ -66,6 +65,13 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ui/backend runtime data
+ui/backend/data/
+ui/backend/logs/
+ui/backend/*.json
+ui/backend/*.yaml
+ui/backend/*.log
+
 # Testing
 coverage/
 .nyc_output/
@@ -78,6 +84,9 @@ temp/
 *.tmp
 *.bak
 
-# Config files (should not contain secrets)
+# Config files (may contain user-specific paths/secrets)
 config/config.yaml
 config/agents.yaml
+
+# OpenClaw workspace (generated at runtime)
+.agents/
