@@ -1,0 +1,29 @@
+# Permission Matrix
+# Define which tiers can interact with each other
+
+philosopher:
+  can_chat_with:
+    - guardian
+    - worker
+  can_mention:
+    - all
+  can_vote: true
+
+guardian:
+  can_chat_with:
+    - philosopher
+    - worker
+  can_mention:
+    - philosopher
+    - guardian
+    - worker
+  can_vote: true
+
+worker:
+  can_chat_with:
+    - philosopher
+    - guardian
+    - worker
+  can_mention:
+    - all
+  can_vote: false

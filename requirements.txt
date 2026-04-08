@@ -1,0 +1,32 @@
+# OpenClaw integration (already installed with OpenClaw)
+# openclaw>=0.1.0
+
+# Data collectors
+wechatpy>=1.0.0
+pyjwt>=2.8.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Image processing
+pillow>=10.0.0
+exifread>=3.0.0
+
+# Data analysis
+openai>=1.0.0
+anthropic>=0.18.0
+
+# Web server
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# Optional: Redis for event bus
+redis>=5.0.0
+
+# Utilities
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+
+# Async support
+aiohttp>=3.9.0

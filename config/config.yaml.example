@@ -1,0 +1,28 @@
+# Cyber-Ideal-State Configuration
+# Copy this file to config.yaml and modify as needed:
+#   cp config/config.yaml.example config/config.yaml
+
+openclaw:
+  workspace: ~/.openclaw/workspace
+  agents_config: ~/.openclaw/openclaw.json
+
+server:
+  host: "127.0.0.1"
+  port: 8080
+  debug: true
+
+agent:
+  default_model: "gpt-4"
+  default_temperature: 0.7
+  default_max_tokens: 2000
+  default_timeout: 300
+
+redis:
+  enabled: false
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
+
+logging:
+  level: "INFO"
+  file: "logs/cyber-ideal-state.log"
