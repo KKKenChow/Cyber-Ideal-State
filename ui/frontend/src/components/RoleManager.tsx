@@ -97,7 +97,7 @@ export default function RoleManager({ onRoleUpdate }: { onRoleUpdate?: () => voi
 
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
-      'ex-partner': '初恋',
+      'first-love': '初恋',
       'colleague': '同事',
       'family': '家人',
       'friend': '朋友'
@@ -148,7 +148,7 @@ export default function RoleManager({ onRoleUpdate }: { onRoleUpdate?: () => voi
           className="input-field appearance-none cursor-pointer min-w-[120px]"
         >
           <option value="">所有类型</option>
-          <option value="ex-partner">初恋</option>
+          <option value="first-love">初恋</option>
           <option value="colleague">同事</option>
           <option value="family">家人</option>
           <option value="friend">朋友</option>

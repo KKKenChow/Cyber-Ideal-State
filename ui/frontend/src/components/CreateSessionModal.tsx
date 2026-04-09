@@ -87,7 +87,7 @@ export default function CreateSessionModal({ onClose, onCreate, roles }: CreateS
 
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
-      'ex-partner': '初恋',
+      'first-love': '初恋',
       'colleague': '同事',
       'family': '家人',
       'friend': '朋友'

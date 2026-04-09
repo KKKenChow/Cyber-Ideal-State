@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Play, Trash2, MessageSquare, Clock, Users, CheckCircle, X } from 'lucide-react'
+import { Plus, Play, Trash2, MessageSquare, Clock, Users, CheckCircle, X, PauseCircle, PlayCircle } from 'lucide-react'
 import { api } from '../lib/api'
 import CreateSessionModal from './CreateSessionModal'
 import ChatPanel from './ChatPanel'
@@ -63,6 +63,16 @@ export default function SessionManager({ availableRoles }: { availableRoles: any
     } catch (error) {
       console.error('Failed to delete session:', error)
       alert('删除会话失败')
+    }
+  }
+
+  const handleToggleActive = async (sessionId: string, currentActive: boolean) => {
+    try {
+      await api.put(`/api/sessions/${sessionId}/active`, { active: !currentActive })
+      loadSessions()
+    } catch (error) {
+      console.error('Failed to toggle session active:', error)
+      alert('操作失败')
     }
   }
 
@@ -255,11 +265,15 @@ export default function SessionManager({ availableRoles }: { availableRoles: any
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-semibold text-white truncate">{session.name}</h3>
-                      {session.active && (
+                      <h3 className={`text-lg font-semibold truncate ${session.active ? 'text-white' : 'text-slate-500'}`}>{session.name}</h3>
+                      {session.active ? (
                         <span className="badge-active">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                           活跃
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-500/15 text-slate-400">
+                          已结束
                         </span>
                       )}
                     </div>
@@ -316,6 +330,19 @@ export default function SessionManager({ availableRoles }: { availableRoles: any
                       title="进入会话"
                     >
                       <Play className="w-4 h-4 text-emerald-400" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleActive(session.id, session.active)
+                      }}
+                      className="btn-ghost"
+                      title={session.active ? '结束会话' : '重新激活'}
+                    >
+                      {session.active 
+                        ? <PauseCircle className="w-4 h-4 text-amber-400" />
+                        : <PlayCircle className="w-4 h-4 text-blue-400" />
+                      }
                     </button>
                     <button
                       onClick={(e) => {

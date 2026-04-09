@@ -1,11 +1,17 @@
 """
 Session Engine - manage conversations with one or multiple agents
+
+SessionEngine handles session lifecycle and message flow.
+For vote/debate/consensus modes, it delegates the actual decision
+logic to DecisionEngine and stores the results in both the session
+messages and the decisions directory.
 """
 import uuid
 import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from core.models import Session, Tier, Role
+from core.decision_engine import DecisionEngine
 
 
 class SessionEngine:
@@ -14,11 +20,12 @@ class SessionEngine:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.sessions_dir = config.get("sessions_dir", "data/sessions")
+        self.decision_engine = DecisionEngine(config)
     
     def create_session(
         self,
         name: str,
-        participants: List[Dict[str, Any]],  # List of {role_id, tier}
+        participants: List[Dict[str, Any]],  # List of {role_id, tier, role_name?}
         decision_mode: str = "chat",
         speaking_mode: str = "free"  # free | turn_based | debate | vote | consensus
     ) -> Session:
@@ -27,11 +34,8 @@ class SessionEngine:
         
         # Determine session mode based on participants
         if len(participants) == 1:
-            # Single participant session
             session_tier = Tier(participants[0]["tier"])
         else:
-            # Multi-participant session
-            # Check if we have all three tiers
             tiers = set(p["tier"] for p in participants)
             if tiers == {"philosopher", "guardian", "worker"}:
                 session_tier = Tier("philosopher")  # Ideal State mode
@@ -72,13 +76,11 @@ class SessionEngine:
         openclaw_api
     ) -> Dict[str, Any]:
         """Send a message to session and get responses"""
-        # Load session
         session = self._load_session(session_id)
         
         if not session:
             return {"error": "Session not found"}
         
-        # Get session config
         config = self._get_session_config(session)
         
         # Add user message
@@ -114,11 +116,13 @@ class SessionEngine:
             if "role_id" in response:
                 msg["metadata"] = {
                     "role_id": response["role_id"],
-                    "role_name": response["role_name"]
+                    "role_name": response.get("role_name", response["role_id"])
                 }
             
-            # Add other metadata fields (like vote result)
-            for key in ["type", "result", "votes", "yes_count", "no_count", "round"]:
+            # Add other metadata fields (like vote result, decision info)
+            for key in ["type", "result", "votes", "yes_count", "no_count", "round",
+                        "confidence", "decision_id", "consensus_reached", "proposal",
+                        "debate_rounds"]:
                 if key in response:
                     if "metadata" not in msg:
                         msg["metadata"] = {}
@@ -138,7 +142,6 @@ class SessionEngine:
     
     def _get_session_config(self, session: Session) -> Dict[str, Any]:
         """Extract session configuration from metadata"""
-        # Find system message with config
         for msg in session.messages:
             if msg.get("role") == "system" and "metadata" in msg:
                 return msg["metadata"]
@@ -160,7 +163,6 @@ class SessionEngine:
         responses = []
         
         for participant in config["participants"]:
-            # Send message to each agent
             agent_response = self._send_to_agent(
                 participant["role_id"],
                 user_message,
@@ -185,16 +187,13 @@ class SessionEngine:
         config = self._get_session_config(session)
         responses = []
         
-        # Determine whose turn it is
         message_count = len([m for m in session.messages if m.get("role") == "assistant"])
         participants = config["participants"]
         
-        # Get next participant
         if len(participants) > 0:
             current_index = message_count % len(participants)
             current_participant = participants[current_index]
             
-            # Get response
             agent_response = self._send_to_agent(
                 current_participant["role_id"],
                 user_message,
@@ -214,27 +213,47 @@ class SessionEngine:
         session: Session,
         user_message: str,
         openclaw_api,
-        rounds: int = 2
+        rounds: int = 3
     ) -> List[Dict[str, Any]]:
-        """Debate mode - multiple rounds of discussion"""
+        """Debate mode - delegates to DecisionEngine for structured debate"""
         config = self._get_session_config(session)
-        all_responses = []
         
-        for round_num in range(rounds):
-            responses = self._free_discussion(session, user_message, openclaw_api)
-            
-            # Add round info
-            for resp in responses:
-                resp["round"] = round_num + 1
-            
-            all_responses.extend(responses)
-            
-            # For debate, update user_message to include previous responses
-            # This creates a chain of responses
-            if round_num < rounds - 1:
-                user_message = f"Previous responses: {[r['content'] for r in responses]}"
+        # Create and execute decision via DecisionEngine
+        decision = self.decision_engine.create_decision(
+            topic=user_message,
+            participants=config["participants"],
+            mode="debate",
+            session_id=session.id
+        )
         
-        return all_responses
+        result = self.decision_engine.debate(decision, rounds=rounds, openclaw_api=openclaw_api)
+        self.decision_engine.save_decision(decision)
+        
+        # Convert debate result to session message format
+        responses = []
+        
+        # Add individual debate messages from each round
+        for round_data in decision.debate_history:
+            for msg in round_data.get("messages", []):
+                responses.append({
+                    "role_id": msg["participant"],
+                    "role_name": msg.get("role_name", msg["participant"]),
+                    "content": msg["message"],
+                    "round": round_data["round"],
+                    "type": "debate_message",
+                    "decision_id": decision.id
+                })
+        
+        # Add summary as final message
+        responses.append({
+            "type": "debate_result",
+            "content": result.get("summary", result.get("decision", "Debate completed")),
+            "confidence": result.get("confidence"),
+            "decision_id": decision.id,
+            "debate_rounds": rounds
+        })
+        
+        return responses
     
     def _vote_mode(
         self,
@@ -242,52 +261,43 @@ class SessionEngine:
         user_message: str,
         openclaw_api
     ) -> List[Dict[str, Any]]:
-        """Vote mode - participants vote on the issue"""
+        """Vote mode - delegates to DecisionEngine for weighted voting"""
         config = self._get_session_config(session)
-        votes = {}
         
-        # Collect votes from all participants
-        for participant in config["participants"]:
-            # Ask agent to vote
-            vote_prompt = f"The question is: {user_message}\n\nPlease respond with your vote (YES/NO/ABSTAIN) and a brief reason."
-            
-            response = self._send_to_agent(
-                participant["role_id"],
-                vote_prompt,
-                openclaw_api
-            )
-            
-            # Extract vote
-            vote = "ABSTAIN"
-            if "YES" in response.upper():
-                vote = "YES"
-            elif "NO" in response.upper():
-                vote = "NO"
-            
-            votes[participant["role_id"]] = {
-                "vote": vote,
-                "reason": response,
-                "role_name": participant.get("role_name", participant["role_id"])
+        # Create and execute decision via DecisionEngine
+        decision = self.decision_engine.create_decision(
+            topic=user_message,
+            participants=config["participants"],
+            mode="vote",
+            session_id=session.id
+        )
+        
+        result = self.decision_engine.vote(decision, openclaw_api)
+        self.decision_engine.save_decision(decision)
+        
+        # Convert to session message format (compatible with existing ChatPanel)
+        yes_count = sum(1 for v in decision.votes.values() if v["vote"] == "YES")
+        no_count = sum(1 for v in decision.votes.values() if v["vote"] == "NO")
+        
+        # Build votes dict in the format ChatPanel expects
+        votes_for_panel = {}
+        for pid, v in decision.votes.items():
+            votes_for_panel[pid] = {
+                "vote": v["vote"],
+                "reason": v.get("reason", ""),
+                "weight": v.get("weight", 1.0),
+                "role_name": v.get("role_name", pid)
             }
-        
-        # Calculate result
-        yes_count = sum(1 for v in votes.values() if v["vote"] == "YES")
-        no_count = sum(1 for v in votes.values() if v["vote"] == "NO")
-        
-        if yes_count > no_count:
-            result = "YES"
-        elif no_count > yes_count:
-            result = "NO"
-        else:
-            result = "TIE"
         
         return [{
             "type": "vote_result",
-            "result": result,
-            "votes": votes,
+            "result": result["decision"],
+            "votes": votes_for_panel,
             "yes_count": yes_count,
             "no_count": no_count,
-            "content": f"Vote result: {result} (YES: {yes_count}, NO: {no_count})"
+            "confidence": result.get("confidence"),
+            "content": f"Vote result: {result['decision']} (YES: {yes_count}, NO: {no_count}, Confidence: {result.get('confidence', 'N/A')})",
+            "decision_id": decision.id
         }]
     
     def _consensus_mode(
@@ -297,47 +307,57 @@ class SessionEngine:
         openclaw_api,
         max_rounds: int = 3
     ) -> List[Dict[str, Any]]:
-        """Consensus mode - try to reach consensus, fall back to vote"""
+        """Consensus mode - delegates to DecisionEngine for consensus building"""
         config = self._get_session_config(session)
         
-        # Start with a proposal
-        current_proposal = self._generate_initial_proposal(user_message, openclaw_api)
+        # Create and execute decision via DecisionEngine
+        decision = self.decision_engine.create_decision(
+            topic=user_message,
+            participants=config["participants"],
+            mode="consensus",
+            session_id=session.id
+        )
         
-        for round_num in range(max_rounds):
-            # Get feedback from all participants
-            feedback = []
-            for participant in config["participants"]:
-                prompt = f"The current proposal is: {current_proposal}\n\nThe original question was: {user_message}\n\nDo you agree? (YES/NO) and why?"
-                
-                response = self._send_to_agent(
-                    participant["role_id"],
-                    prompt,
-                    openclaw_api
-                )
-                
-                agrees = "YES" in response.upper()
-                feedback.append({
-                    "role_id": participant["role_id"],
-                    "role_name": participant.get("role_name", participant["role_id"]),
-                    "agrees": agrees,
-                    "response": response
-                })
-            
-            # Check if consensus reached
-            if all(f["agrees"] for f in feedback):
-                return [{
-                    "type": "consensus_result",
-                    "result": "CONSENSUS",
-                    "proposal": current_proposal,
-                    "rounds": round_num + 1,
-                    "content": f"Consensus reached after {round_num + 1} rounds: {current_proposal}"
-                }]
-            
-            # Update proposal based on feedback
-            current_proposal = self._update_proposal(current_proposal, feedback, openclaw_api)
+        result = self.decision_engine.consensus(decision, max_rounds=max_rounds, openclaw_api=openclaw_api)
+        self.decision_engine.save_decision(decision)
         
-        # No consensus, fall back to vote
-        return self._vote_mode(session, user_message, openclaw_api)
+        # Convert to session message format
+        if result.get("consensus_reached"):
+            return [{
+                "type": "consensus_result",
+                "result": "CONSENSUS",
+                "proposal": result.get("proposal", result.get("final_decision")),
+                "rounds": result.get("rounds"),
+                "confidence": result.get("confidence"),
+                "consensus_reached": True,
+                "content": f"Consensus reached after {result['rounds']} rounds: {result.get('proposal', result.get('final_decision'))}",
+                "decision_id": decision.id
+            }]
+        else:
+            # Fell back to vote - include vote result
+            yes_count = sum(1 for v in decision.votes.values() if v["vote"] == "YES")
+            no_count = sum(1 for v in decision.votes.values() if v["vote"] == "NO")
+            
+            votes_for_panel = {}
+            for pid, v in decision.votes.items():
+                votes_for_panel[pid] = {
+                    "vote": v["vote"],
+                    "reason": v.get("reason", ""),
+                    "weight": v.get("weight", 1.0),
+                    "role_name": v.get("role_name", pid)
+                }
+            
+            return [{
+                "type": "consensus_fallback_vote",
+                "result": result.get("final_decision"),
+                "votes": votes_for_panel,
+                "yes_count": yes_count,
+                "no_count": no_count,
+                "confidence": result.get("confidence"),
+                "consensus_reached": False,
+                "content": f"Consensus not reached after {result['rounds']} rounds. Fallback vote: {result.get('final_decision')} (YES: {yes_count}, NO: {no_count})",
+                "decision_id": decision.id
+            }]
     
     def _send_to_agent(
         self,
@@ -347,64 +367,14 @@ class SessionEngine:
     ) -> str:
         """Send message to an agent via OpenClaw"""
         if openclaw_api is None:
-            # No OpenClaw API connected, return placeholder
             return f"[⚠️ OpenClaw API not connected. Please configure OpenClaw to enable real agent responses.\n\nAgent {agent_id} received message: {message[:100]}...]"
         
         try:
-            # Call OpenClaw API to get response from agent
-            # OpenClaw API format: openclaw_api.send_message(agent_id, message)
             response = openclaw_api.send_message(agent_id, message)
             return response
         except Exception as e:
             print(f"Failed to get response from agent {agent_id}: {e}")
             return f"[Error from agent {agent_id}: {str(e)}]"
-    
-    def _generate_initial_proposal(
-        self,
-        question: str,
-        openclaw_api
-    ) -> str:
-        """Generate initial proposal for consensus"""
-        if openclaw_api is None:
-            return f"Initial proposal for: {question}"
-        
-        prompt = f"""The question for consensus is: {question}
-
-Please generate an initial proposal based on the question.
-Keep it clear and concise."""
-        
-        try:
-            return openclaw_api.send_message("system", prompt)
-        except:
-            return f"Initial proposal for: {question}"
-    
-    def _update_proposal(
-        self,
-        current_proposal: str,
-        feedback: List[Dict[str, Any]],
-        openclaw_api
-    ) -> str:
-        """Update proposal based on feedback"""
-        if openclaw_api is None:
-            return current_proposal
-        
-        feedback_text = "\n".join([
-            f"- {f['role_name']}: {'agrees' if f['agrees'] else 'disagrees'} - {f['response']}"
-            for f in feedback
-        ])
-        
-        prompt = f"""Current proposal: {current_proposal}
-
-Feedback from participants:
-{feedback_text}
-
-Please update the proposal incorporating the feedback.
-Provide the revised complete proposal."""
-        
-        try:
-            return openclaw_api.send_message("system", prompt)
-        except:
-            return current_proposal
     
     def _load_session(self, session_id: str) -> Optional[Session]:
         """Load session from disk"""
@@ -470,7 +440,6 @@ def main():
         config = {"sessions_dir": "data/sessions"}
         engine = SessionEngine(config)
         
-        # Create a test session
         session = engine.create_session(
             name="Test Session",
             participants=[

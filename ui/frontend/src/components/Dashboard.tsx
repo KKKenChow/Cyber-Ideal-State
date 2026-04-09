@@ -133,7 +133,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (path: string) 
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <div className="text-3xl font-bold text-white tabular-nums">{stats?.sessions.total || 0}</div>
                   <div className="text-xs text-slate-500 mt-1 font-medium">总会话</div>
@@ -141,6 +141,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (path: string) 
                 <div>
                   <div className="text-3xl font-bold text-emerald-400 tabular-nums">{stats?.sessions.active || 0}</div>
                   <div className="text-xs text-slate-500 mt-1 font-medium">活跃会话</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-blue-300 tabular-nums">{stats?.sessions.today || 0}</div>
+                  <div className="text-xs text-slate-500 mt-1 font-medium">今日会话</div>
                 </div>
               </div>
 

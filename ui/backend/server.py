@@ -28,6 +28,7 @@ from core.role_manager import RoleManager
 from core.session_manager import SessionManager
 from core.session_engine import SessionEngine
 from core.agent_generator import AgentGenerator
+from core.decision_engine import DecisionEngine
 
 
 app = FastAPI(
@@ -89,6 +90,7 @@ role_manager = RoleManager(config)
 session_manager = SessionManager(config)
 session_engine = SessionEngine(config)
 agent_generator = AgentGenerator(config)
+decision_engine = DecisionEngine(config)
 
 
 class OpenClAPIImpl:
@@ -192,7 +194,8 @@ async def health():
             "role_manager": "active",
             "session_manager": "active",
             "session_engine": "active",
-            "agent_generator": "active"
+            "agent_generator": "active",
+            "decision_engine": "active"
         }
     }
 
@@ -461,6 +464,20 @@ async def delete_session(session_id: str):
     return {"status": "success", "message": "Session deleted"}
 
 
+@app.put("/api/sessions/{session_id}/active")
+async def toggle_session_active(session_id: str, data: Dict[str, Any]):
+    """Toggle session active status"""
+    session = session_manager.get_session(session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    session.active = data.get("active", not session.active)
+    session_manager.save_session(session)
+    
+    return {"status": "success", "active": session.active, "session": session.to_dict()}
+
+
 @app.delete("/api/sessions/{session_id}/messages")
 async def clear_session_messages(session_id: str):
     """Clear all messages in a session (keep system messages)"""
@@ -476,13 +493,39 @@ async def clear_session_messages(session_id: str):
     return {"status": "success", "message": "Messages cleared"}
 
 
+# ==================== Decisions API ====================
+
+@app.get("/api/decisions")
+async def list_decisions(session_id: str = None):
+    """List all decisions, optionally filtered by session"""
+    decisions = decision_engine.list_decisions(session_id=session_id)
+    return {
+        "count": len(decisions),
+        "decisions": decisions
+    }
+
+
+@app.get("/api/decisions/{decision_id}")
+async def get_decision(decision_id: str):
+    """Get a specific decision by ID"""
+    decision = decision_engine.get_decision(decision_id)
+    
+    if not decision:
+        raise HTTPException(status_code=404, detail="Decision not found")
+    
+    return decision
+
+
 # ==================== Stats API ====================
 
 @app.get("/api/stats")
 async def get_stats():
     """Get system statistics"""
+    from datetime import date
+    
     roles = role_manager.list_roles()
     sessions = session_manager.list_sessions()
+    decisions = decision_engine.list_decisions()
     
     # Count by tier
     tiers = {}
@@ -496,6 +539,13 @@ async def get_stats():
         role_type = role.type.value
         types[role_type] = types.get(role_type, 0) + 1
     
+    # Today's sessions
+    today = date.today().isoformat()
+    today_sessions = len([
+        s for s in sessions 
+        if s.created_at and s.created_at.date().isoformat() == today
+    ])
+    
     return {
         "roles": {
             "total": len(roles),
@@ -505,7 +555,12 @@ async def get_stats():
         },
         "sessions": {
             "total": len(sessions),
-            "active": len([s for s in sessions if s.active])
+            "active": len([s for s in sessions if s.active]),
+            "today": today_sessions
+        },
+        "decisions": {
+            "total": len(decisions),
+            "completed": len([d for d in decisions if d.get("completed_at")])
         }
     }
 

@@ -483,7 +483,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Generate OpenClaw agents from collected data")
     parser.add_argument("--name", required=True, help="Role name")
-    parser.add_argument("--type", required=True, choices=["ex-partner", "colleague", "family", "friend"])
+    parser.add_argument("--type", required=True, choices=["first-love", "colleague", "family", "friend"])
     parser.add_argument("--tier", required=True, choices=["philosopher", "guardian", "worker"])
     parser.add_argument("--description", help="Role description")
     parser.add_argument("--manual", help="Manual description of the person")

@@ -24,16 +24,14 @@
 
 支持从多种数据源生成独立的数字 Agent。本项目**不提供聊天记录导出工具**，你需要先通过其他开源工具导出聊天记录，再导入到本项目。
 
-| 数据源 | 推荐导出工具 | 支持格式 | 提取内容 |
-|--------|--------------|----------|----------|
-| 微信聊天记录 | [WeChatMsg](https://github.com/LC044/WeChatMsg) / [PyWxDump](https://github.com/xaoyaoo/PyWxDump) / [留痕](https://github.com/ljc001100/liuhhen) | CSV/JSON/TXT | 关系记忆、说话风格、情感模式、共同经历 |
-| QQ 聊天记录 | [qq-export](https://github.com/duanls/qq-export) / 手动导出 | TXT/MHT | 学生时代记忆、性格特征、聊天历史 |
-| 飞书文档/聊天 | 飞书官方 API | JSON | 工作能力、技术规范、企业文化、协作风格 |
-| 钉钉 | 钉钉官方 API | JSON | 工作沟通、决策模式 |
-| 邮件 | 任何邮箱客户端 | .eml/.mbox | 正式沟通风格、决策历史 |
-| 朋友圈/微博 | 手动抓取 | 文本+图片 | 公众人设、生活方式、价值观 |
-| 照片 | 直接导入 | JPEG/PNG（保留 EXIF） | 时间线、地点信息、共同经历记忆 |
-| 手动描述 | 直接在 UI 填写 | 纯文本 | 主观标签、性格描述、补充记忆 |
+| 数据源 | 推荐导出工具 | 支持格式 | 提取内容 | 完成度 |
+|--------|--------------|----------|----------|--------|
+| 微信聊天记录 | [WeChatMsg](https://github.com/LC044/WeChatMsg) / [PyWxDump](https://github.com/xaoyaoo/PyWxDump) / [留痕](https://github.com/ljc001100/liuhhen) | SQLite | 关系记忆、说话风格、情感模式、共同经历 | ✅ 可用 |
+| QQ 聊天记录 | [qq-export](https://github.com/duanls/qq-export) / 手动导出 | TXT | 学生时代记忆、性格特征、聊天历史 | ✅ TXT 可用，MHT 规划中 |
+| 飞书文档/聊天 | 飞书官方 API | JSON | 工作能力、技术规范、协作风格 | 🔄 认证可用，消息采集规划中 |
+| 邮件 | 任何邮箱客户端 | .eml/.mbox | 正式沟通风格、决策历史 | ✅ 可用 |
+| 照片 | 直接导入 | JPEG/PNG（保留 EXIF） | 时间线、地点信息、共同经历记忆 | ✅ 可用 |
+| 手动描述 | 直接在 UI 填写 | 纯文本 | 主观标签、性格描述、补充记忆 | ✅ 可用 |
 
 **数据源说明：**
 - **本项目只处理你导出后的文件/数据**
@@ -91,7 +89,7 @@
 **像群聊一样的灵活会话机制：**
 
 - 📝 **创建会话** - 选择任意角色组合（1个或多个）
-- 🔗 **角色关系配置** - 定义角色间的互动规则
+- 🔗 **角色权限体系** - 基于等级的投票权重和互动权限（`permissions.yaml`）
 - 💬 **多角色对话** - 多个 Agent 同时参与对话
 - 🎯 **自定义决策模式** - 投票、辩论、共识或自由讨论
 
@@ -139,8 +137,8 @@
 
 - ✅ 系统自动识别为理想国模式
 - ✅ 显示"理想国三等级协作模式"标记
-- ✅ 自动配置协作规则
-- ✅ 最大化协作效果
+- ✅ 基于等级的差异化投票权重自动生效
+- 🔄 协作规则增强（规划中）
 
 ---
 
@@ -200,7 +198,7 @@ chmod +x start.sh && ./start.sh
    - **等级**：统治者、护卫者、劳动者
    - **描述**：简要描述这个角色
 5. **选择数据来源**：
-   - 从下拉菜单选择数据源类型（微信、QQ、飞书、邮件、照片等）
+   - 从下拉菜单选择数据源类型（微信、QQ、飞书、邮件、照片、手动描述等）
    - 输入文件路径或 API 凭证
    - 点击"添加"按钮
    - 可以添加多个数据源
@@ -310,8 +308,7 @@ Cyber-Ideal-State/
 │   │   │       ├── CreateRoleModal.tsx   # 创建角色弹窗
 │   │   │       ├── SessionManager.tsx    # 会话管理
 │   │   │       ├── CreateSessionModal.tsx # 创建会话弹窗
-│   │   │       ├── ChatPanel.tsx         # 聊天面板
-│   │   │       ├── SessionPanel.tsx      # 会话面板（旧版兼容）
+│   │   │       ├── ChatPanel.tsx         # 聊天面板（支持投票/辩论/共识结果渲染）
 │   │   │       └── DecisionEngine.tsx    # 决策模式说明页
 │   │   ├── index.html
 │   │   ├── vite.config.ts
@@ -343,6 +340,86 @@ Cyber-Ideal-State/
     └── ROADMAP.md                    # 路线图
 ```
 
+### 核心引擎协作关系
+
+```
+用户消息
+   │
+   ▼
+SessionEngine.send_message()
+   │
+   ├── speaking_mode == "free"      → _free_discussion()    → 各角色独立回复
+   ├── speaking_mode == "turn_based" → _turn_based()         → 按序轮流回复
+   ├── speaking_mode == "debate"     → _debate_mode()        ─┐
+   ├── speaking_mode == "vote"       → _vote_mode()          ─┤ 委托给 DecisionEngine
+   └── speaking_mode == "consensus"  → _consensus_mode()     ─┘
+                                              │
+                                              ▼
+                                    DecisionEngine
+                                    ├── vote()      → 加权投票，返回 YES/NO/TIE
+                                    ├── debate()    → 多轮辩论 + AI 总结
+                                    └── consensus() → 多轮协商，失败降级为投票
+                                              │
+                                              ▼
+                                    保存决策到 data/decisions/
+                                    关联 session_id，可追溯
+```
+
+### 投票权重说明
+
+投票权重由 `config/permissions.yaml` 中的等级权限自动决定：
+
+| 等级 | 投票权重 | 说明 |
+|------|----------|------|
+| 统治者（philosopher） | 2.0 | 战略决策者，权重最高 |
+| 护卫者（guardian） | 1.0 | 执行监督者，标准权重 |
+| 劳动者（worker） | 0.0 | 方案提供者，可讨论但无投票权 |
+
+> **注意**: 劳动者在投票模式下权重为 0（根据 `permissions.yaml` 中 `can_vote: false`），但仍可参与讨论和辩论。当所有参与者权重为 0 时，系统会降级为简单多数计数。
+>
+> **平权降级**: 当会话中参与者等级单一（如全是护卫者）或缺少等级多样性时，系统自动切换为**平权投票模式**（所有人权重=1.0），确保投票公平。例如：
+> - 全是劳动者 → 所有人权重 1.0（否则全员 0 权重无法投票）
+> - 全是护卫者 → 所有人权重 1.0（否则 1.0 vs 1.0 无差异）
+> - 统治者+护卫者 → 保留等级权重（2.0 vs 1.0）
+
+### 会话状态管理
+
+会话有两种状态：
+- **活跃**（active）— 可以正常发送消息
+- **已结束**（inactive）— 会话归档，保留历史记录
+
+在会话管理页面，你可以：
+- 点击 ⏸ 按钮结束会话
+- 点击 ▶ 按钮重新激活已结束的会话
+
+---
+
+## 📡 API 端点
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| **角色** | | |
+| GET | `/api/roles` | 列出角色（支持 `tier`/`type`/`active` 过滤） |
+| GET | `/api/roles/{id}` | 获取角色详情 |
+| POST | `/api/roles` | 创建角色（含数据采集、分析、生成） |
+| PUT | `/api/roles/{id}` | 更新角色 |
+| DELETE | `/api/roles/{id}` | 删除角色（同步清理 OpenClaw 注册） |
+| POST | `/api/roles/{id}/regenerate` | 重新生成角色 Agent |
+| **会话** | | |
+| GET | `/api/sessions` | 列出会话（支持 `role_id`/`mode`/`active` 过滤） |
+| GET | `/api/sessions/{id}` | 获取会话详情（含消息历史） |
+| POST | `/api/sessions` | 创建会话 |
+| POST | `/api/sessions/{id}/messages` | 发送消息（触发发言模式） |
+| PUT | `/api/sessions/{id}/active` | 切换会话活跃状态 |
+| DELETE | `/api/sessions/{id}` | 删除会话 |
+| DELETE | `/api/sessions/{id}/messages` | 清空会话消息（保留系统消息） |
+| **决策** | | |
+| GET | `/api/decisions` | 列出决策记录（支持 `session_id` 过滤） |
+| GET | `/api/decisions/{id}` | 获取决策详情 |
+| **统计** | | |
+| GET | `/api/stats` | 系统统计（角色/会话/决策数量） |
+| GET | `/api/health` | 健康检查 |
+
 ---
 
 ## 📂 数据存储说明
@@ -358,9 +435,13 @@ Cyber-Ideal-State/
 
 ### 隐私权说明
 
-- 所有你创建的数字角色、对话数据都保存在**本地项目目录**，不会上传到任何云端
-- OpenClaw 会在 `~/.openclaw/` 存储 Agent 配置，Cyber-Ideal-State 只会同步角色元信息到 OpenClaw 配置，**不会复制你的隐私数据**
-- 卸载的时候运行 `./uninstall.sh` 会自动删除所有本项目创建的数据
+- 所有你创建的数字角色、对话数据、决策记录都保存在**本地**，不会上传到任何云端
+- 创建角色时，项目会从你的聊天记录中**蒸馏提取**人格和记忆，生成 SOUL.md 存入 `~/.openclaw/workspace/agents/`。原始聊天记录**不会被复制**到 OpenClaw 目录
+- 角色元信息（ID、名称、工作区路径）会同步到 `~/.openclaw/openclaw.json`，不含隐私内容
+- OpenClaw 的 Agent 在对话中会自行积累记忆（`memory/` 目录和 `MEMORY.md`），这些也**仅存于本地**
+- 投票/辩论/共识的决策过程记录保存在 `data/decisions/`，仅包含投票结果和理由，不包含原始聊天数据
+- `config/permissions.yaml` 中的权限配置不包含个人信息，仅为功能规则定义
+- 卸载时运行 `./uninstall.sh` 会删除所有本项目创建的数据
 
 ### 卸载
 
@@ -377,12 +458,38 @@ Cyber-Ideal-State/
 
 ## 🔧 配置说明
 
+### 权限配置（permissions.yaml）
+
+`config/permissions.yaml` 定义了三等级的权限矩阵，影响投票权重和功能限制：
+
+```yaml
+philosopher:          # 统治者
+  can_vote: true      # 可投票
+  can_decide: true    # 可做最终决策
+  can_debate: true    # 可辩论
+  can_propose: true   # 可提方案
+
+guardian:             # 护卫者
+  can_vote: true
+  can_decide: false
+  can_debate: true
+  can_propose: true
+
+worker:               # 劳动者
+  can_vote: false     # 不可投票（投票权重为 0）
+  can_decide: false
+  can_debate: true    # 仍可参与讨论和辩论
+  can_propose: true
+```
+
+修改此文件后重启服务即可生效，投票权重会自动重新计算。
+
 ### 角色配置示例
 
 ```yaml
-id: ex-001
+id: first-love-001
 name: 初恋
-type: ex-partner  # ex-partner | colleague | family | friend
+type: first-love  # first-love | colleague | family | friend
 tier: philosopher  # philosopher | guardian | worker
 created_at: 2024-04-07T10:00:00Z
 

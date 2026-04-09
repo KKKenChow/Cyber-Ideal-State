@@ -99,7 +99,7 @@ export default function CreateRoleModal({ onClose, onCreate }: CreateRoleModalPr
                 <option value="friend">朋友</option>
                 <option value="colleague">同事</option>
                 <option value="family">家人</option>
-                <option value="ex-partner">初恋</option>
+                <option value="first-love">初恋</option>
               </select>
             </div>
 

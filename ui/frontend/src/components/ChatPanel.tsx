@@ -185,7 +185,20 @@ export default function ChatPanel({ sessionId, participants, onMessageSent }: Ch
   }
 
   const isVoteResult = (message: Message) => {
-    return message.metadata?.type === 'vote_result'
+    return message.metadata?.type === 'vote_result' || 
+           message.metadata?.type === 'consensus_fallback_vote'
+  }
+
+  const isDebateResult = (message: Message) => {
+    return message.metadata?.type === 'debate_result'
+  }
+
+  const isConsensusResult = (message: Message) => {
+    return message.metadata?.type === 'consensus_result'
+  }
+
+  const isDecisionResult = (message: Message) => {
+    return isVoteResult(message) || isDebateResult(message) || isConsensusResult(message)
   }
 
   return (
@@ -237,8 +250,12 @@ export default function ChatPanel({ sessionId, participants, onMessageSent }: Ch
             {message.role === 'assistant' && (
               <div className="flex justify-start">
                 <div className={`max-w-2xl px-5 py-3.5 rounded-2xl rounded-tl-md ${
-                  isVoteResult(message)
-                    ? 'bg-blue-500/10 border border-blue-500/20'
+                  isDecisionResult(message)
+                    ? isConsensusResult(message)
+                      ? 'bg-emerald-500/10 border border-emerald-500/20'
+                      : isDebateResult(message)
+                      ? 'bg-amber-500/10 border border-amber-500/20'
+                      : 'bg-blue-500/10 border border-blue-500/20'
                     : 'glass-card'
                 }`}>
                   {/* Role Info */}
@@ -250,10 +267,59 @@ export default function ChatPanel({ sessionId, participants, onMessageSent }: Ch
                       <span className="font-medium text-slate-300 text-sm">
                         {message.metadata.role_name || 'AI'}
                       </span>
+                      {isConsensusResult(message) && (
+                        <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md text-[11px] font-medium">
+                          共识达成
+                        </span>
+                      )}
+                      {isDebateResult(message) && (
+                        <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md text-[11px] font-medium">
+                          辩论总结
+                        </span>
+                      )}
                       {isVoteResult(message) && (
                         <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-md text-[11px] font-medium">
                           投票结果
                         </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Consensus Result Display */}
+                  {isConsensusResult(message) && (
+                    <div className="mb-4 space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-emerald-400 font-medium">✓ 共识达成</span>
+                        {message.metadata.rounds && (
+                          <span className="text-slate-500 text-xs">（{message.metadata.rounds} 轮协商）</span>
+                        )}
+                      </div>
+                      {message.metadata.proposal && (
+                        <div className="text-sm text-slate-300 bg-white/[0.03] rounded-lg p-3 border border-white/[0.06]">
+                          {message.metadata.proposal}
+                        </div>
+                      )}
+                      {message.metadata.confidence && (
+                        <div className="text-xs text-slate-500">
+                          置信度: {Math.round(message.metadata.confidence * 100)}%
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Debate Result Display */}
+                  {isDebateResult(message) && (
+                    <div className="mb-4 space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-amber-400 font-medium">🎭 辩论总结</span>
+                        {message.metadata.debate_rounds && (
+                          <span className="text-slate-500 text-xs">（{message.metadata.debate_rounds} 轮辩论）</span>
+                        )}
+                      </div>
+                      {message.metadata.confidence && (
+                        <div className="text-xs text-slate-500">
+                          置信度: {Math.round(message.metadata.confidence * 100)}%
+                        </div>
                       )}
                     </div>
                   )}
@@ -264,6 +330,9 @@ export default function ChatPanel({ sessionId, participants, onMessageSent }: Ch
                       {Object.entries(message.metadata.votes).map(([roleId, voteData]: [string, any]) => (
                         <div key={roleId} className="flex items-center gap-3 text-sm">
                           <span className="text-slate-300">{voteData.role_name}</span>
+                          {voteData.weight !== undefined && voteData.weight > 0 && (
+                            <span className="text-slate-600 text-[10px]">×{voteData.weight}</span>
+                          )}
                           <span className={`px-2 py-0.5 rounded-md font-medium text-xs ${
                             voteData.vote === 'YES'
                               ? 'bg-emerald-500/15 text-emerald-300'
@@ -280,12 +349,16 @@ export default function ChatPanel({ sessionId, participants, onMessageSent }: Ch
                           最终结果: <span className={
                             message.metadata.result === 'YES' ? 'text-emerald-400' :
                             message.metadata.result === 'NO' ? 'text-red-400' :
+                            message.metadata.result === 'CONSENSUS' ? 'text-emerald-400' :
                             'text-slate-400'
                           }>{message.metadata.result}</span>
                           <span className="text-slate-500 ml-2 text-xs">
                             (YES: {message.metadata.yes_count}, NO: {message.metadata.no_count})
                           </span>
                         </span>
+                        {!message.metadata.consensus_reached && message.metadata.type === 'consensus_fallback_vote' && (
+                          <span className="text-amber-400 text-xs ml-2">（共识未达成，降级为投票）</span>
+                        )}
                       </div>
                     </div>
                   )}

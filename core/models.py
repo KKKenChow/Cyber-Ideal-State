@@ -9,7 +9,7 @@ from enum import Enum
 
 class RoleType(Enum):
     """Role type classification"""
-    EX_PARTNER = "ex-partner"
+    EX_PARTNER = "first-love"
     COLLEAGUE = "colleague"
     FAMILY = "family"
     FRIEND = "friend"
